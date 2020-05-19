@@ -41,7 +41,7 @@ def main(yolo):
     if asyncVideo_flag :
         video_capture = VideoCaptureAsync(file_path)
     else:
-        video_capture = cv2.VideoCapture(file_path)
+        video_capture = cv2.VideoCapture('/content/drive/My Drive/src.mp4')
 
     if asyncVideo_flag:
         video_capture.start()
