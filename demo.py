@@ -3,8 +3,10 @@
 
 from __future__ import division, print_function, absolute_import
 
+import os
 from timeit import time
 import warnings
+import sys
 import cv2
 import numpy as np
 from PIL import Image
@@ -15,65 +17,52 @@ from deep_sort import nn_matching
 from deep_sort.detection import Detection
 from deep_sort.tracker import Tracker
 from tools import generate_detections as gdet
-import imutils.video
-from videocaptureasync import VideoCaptureAsync
-
+from deep_sort.detection import Detection as ddet
 warnings.filterwarnings('ignore')
 
 def main(yolo):
 
-    # Definition of the parameters
+   # Definition of the parameters
     max_cosine_distance = 0.3
     nn_budget = None
     nms_max_overlap = 1.0
     
-    # Deep SORT
+   # deep_sort 
     model_filename = 'model_data/mars-small128.pb'
     encoder = gdet.create_box_encoder(model_filename,batch_size=1)
     
     metric = nn_matching.NearestNeighborDistanceMetric("cosine", max_cosine_distance, nn_budget)
     tracker = Tracker(metric)
 
-    writeVideo_flag = True
-    asyncVideo_flag = False
-
-    file_path = 'video.webm'
-    if asyncVideo_flag :
-        video_capture = VideoCaptureAsync(file_path)
-    else:
-        video_capture = cv2.VideoCapture('/content/drive/My Drive/src.mp4')
-
-    if asyncVideo_flag:
-        video_capture.start()
+    writeVideo_flag = True 
+    
+    #导入数据
+    video_capture = cv2.VideoCapture('/content/drive/My Drive/src.mp4')
 
     if writeVideo_flag:
-        if asyncVideo_flag:
-            w = int(video_capture.cap.get(3))
-            h = int(video_capture.cap.get(4))
-        else:
-            w = int(video_capture.get(3))
-            h = int(video_capture.get(4))
-        fourcc = cv2.VideoWriter_fourcc(*'XVID')
-        out = cv2.VideoWriter('output_yolov3.avi', fourcc, 30, (w, h))
-        frame_index = -1
-
+    # Define the codec and create VideoWriter object
+        w = int(video_capture.get(3))
+        h = int(video_capture.get(4))
+        fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+        out = cv2.VideoWriter('output.avi', fourcc, 15, (w, h))
+        list_file = open('detection.txt', 'w')
+        frame_index = -1 
+        
     fps = 0.0
-    fps_imutils = imutils.video.FPS().start()
-
     while True:
         ret, frame = video_capture.read()  # frame shape 640*480*3
         if ret != True:
-             break
-
+            break
         t1 = time.time()
 
-        image = Image.fromarray(frame[...,::-1])  # bgr to rgb
-        boxs = yolo.detect_image(image)[0]
-        confidence = yolo.detect_image(image)[1]
-
+       # image = Image.fromarray(frame)
+        image = Image.fromarray(frame[...,::-1]) #bgr to rgb
+        boxs = yolo.detect_image(image)
+       # print("box_num",len(boxs))
         features = encoder(frame,boxs)
-
-        detections = [Detection(bbox, confidence, feature) for bbox, confidence, feature in zip(boxs, confidence, features)]
+        
+        # score to 1.0 here).
+        detections = [Detection(bbox, 1.0, feature) for bbox, feature in zip(boxs, features)]
         
         # Run non-maxima suppression.
         boxes = np.array([d.tlwh for d in detections])
@@ -94,37 +83,31 @@ def main(yolo):
 
         for det in detections:
             bbox = det.to_tlbr()
-            score = "%.2f" % round(det.confidence * 100, 2)
             cv2.rectangle(frame,(int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])),(255,0,0), 2)
-            cv2.putText(frame, score + '%', (int(bbox[0]), int(bbox[3])), 0, 5e-3 * 130, (0,255,0),2)
             
         cv2.imshow('', frame)
-
-        if writeVideo_flag: # and not asyncVideo_flag:
+        
+        if writeVideo_flag:
             # save a frame
             out.write(frame)
             frame_index = frame_index + 1
-
-        fps_imutils.update()
-
-        fps = (fps + (1./(time.time()-t1))) / 2
-        print("FPS = %f"%(fps))
+            list_file.write(str(frame_index)+' ')
+            if len(boxs) != 0:
+                for i in range(0,len(boxs)):
+                    list_file.write(str(boxs[i][0]) + ' '+str(boxs[i][1]) + ' '+str(boxs[i][2]) + ' '+str(boxs[i][3]) + ' ')
+            list_file.write('\n')
+            
+        fps  = ( fps + (1./(time.time()-t1)) ) / 2
+        print("fps= %f"%(fps))
         
         # Press Q to stop!
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
-    fps_imutils.stop()
-    print('imutils FPS: {}'.format(fps_imutils.fps()))
-
-    if asyncVideo_flag:
-        video_capture.stop()
-    else:
-        video_capture.release()
-
+    video_capture.release()
     if writeVideo_flag:
         out.release()
-
+        list_file.close()
     cv2.destroyAllWindows()
 
 if __name__ == '__main__':
